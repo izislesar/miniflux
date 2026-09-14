@@ -1,0 +1,52 @@
+# laptop selfhost, manual runs only
+# usage: docker compose -f selfhost/docker-compose.yml --env-file selfhost/.env up -d
+# needs postgres, so two containers. still light, ~120mb total.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: miniflux-db
+    restart: "no"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - POSTGRES_USER=miniflux
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme}
+      - POSTGRES_DB=miniflux
+    volumes:
+      - miniflux-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U miniflux"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: miniflux/miniflux:latest
+    container_name: miniflux
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - DATABASE_URL=postgres://miniflux:${DB_PASSWORD:-changeme}@db:5432/miniflux?sslmode=disable
+      - RUN_MIGRATIONS=1
+      - CREATE_ADMIN=1
+      - ADMIN_USERNAME=${ADMIN_USER:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme-long}
+    ports:
+      - "${MINIFLUX_PORT:-8082}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  miniflux-db:
+    name: miniflux-db
